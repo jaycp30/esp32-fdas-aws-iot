@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  IAM service role that AWS Amplify Hosting assumes to deploy the FDAS web app's Gen 2 backend
+  (npx ampx pipeline-deploy). One role per Amplify app; not shared with other apps.
+
+# Deploy once, then point the Amplify app at it:
+#   aws cloudformation deploy --stack-name fdas-amplify-service-role \
+#     --template-file infra/amplify-service-role.yaml --region ap-northeast-1 \
+#     --capabilities CAPABILITY_NAMED_IAM --parameter-overrides AmplifyAppId=<app id>
+#   aws amplify update-app --app-id <app id> --iam-service-role-arn <RoleArn output> --region ap-northeast-1
+
+Parameters:
+  AmplifyAppId:
+    Type: String
+    Description: ID of the Amplify app allowed to use this role (e.g. d3ar5fu2alxp7w).
+    AllowedPattern: "^d[a-z0-9]+$"
+
+Resources:
+  AmplifyBackendDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "fdas-amplify-backend-deploy-${AmplifyAppId}"
+      Description: Assumed by Amplify Hosting to deploy the FDAS web app's Gen 2 backend.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: amplify.amazonaws.com
+            Action: sts:AssumeRole
+            # Confused-deputy protection: only THIS Amplify app, in THIS account, may assume
+            # the role, not any Amplify app anywhere that learns the role's name.
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:amplify:${AWS::Region}:${AWS::AccountId}:apps/${AmplifyAppId}*"
+      # AWS's managed policy for Gen 2 backend deploys (CloudFormation, CDK assets, and the
+      # IAM/Cognito resources Amplify creates). It is broad by necessity: a CDK deploy creates
+      # IAM roles. Same policy the shisha-companion Gen 2 app already uses.
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmplifyBackendDeployFullAccess
+
+Outputs:
+  RoleArn:
+    Description: Pass to `aws amplify update-app --iam-service-role-arn`.
+    Value: !GetAtt AmplifyBackendDeployRole.Arn

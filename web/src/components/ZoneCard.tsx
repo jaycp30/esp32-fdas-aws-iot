@@ -11,6 +11,7 @@
 import alarmPulse from '../lottie/alarmPulse.json'
 import { AlarmTriangleIcon, CheckIcon, TroubleDiamondIcon, UnknownIcon } from './icons'
 import { StatusMotion } from './StatusMotion'
+import { formatClockTime } from '../utils/formatRelativeTime'
 import type { ChannelViewModel, DisplayState } from '../types/zone'
 
 interface StatusTreatment {
@@ -73,13 +74,26 @@ export function ZoneCard({ channel }: { channel: ChannelViewModel }) {
   const treatment = TREATMENTS[channel.state]
   const isAlarm = channel.state === 'ALARM'
 
+  // Contract rule C3 ("OFFLINE never erases an alarm"): a card that's
+  // UNKNOWN but was last seen alarming/active gets a coloured left accent -
+  // red for a zone (it was an ALARM), amber for MON (it was ACTIVE) - on
+  // top of the normal grey UNKNOWN treatment, plus a text marker below the
+  // status line. This is deliberately NOT the full solid-red live-ALARM
+  // treatment above: the card is still honestly UNKNOWN (we don't know if
+  // it's still true right now), it just can't go fully silent about the
+  // last thing the device actually said.
+  const hasLastReportedMarker = channel.state === 'UNKNOWN' && channel.lastReportedActiveAt !== null
+  const markerAccentClass = channel.kind === 'zone' ? 'border-l-4 border-l-alarm' : 'border-l-4 border-l-trouble'
+  const markerTextClass = channel.kind === 'zone' ? 'text-alarm' : 'text-trouble'
+  const markerWord = channel.kind === 'zone' ? 'ALARM' : 'ACTIVE'
+
   // No colour transition on purpose: a state change (especially into ALARM)
   // must be readable the instant it happens. A fade left the heading white on
   // a still-white card for ~300ms, because the heading's colour switches
   // instantly while the card background was still animating.
   return (
     <li
-      className={`flex items-center gap-4 rounded-xl border p-4 sm:p-5 ${treatment.card}`}
+      className={`flex items-center gap-4 rounded-xl border p-4 sm:p-5 ${treatment.card} ${hasLastReportedMarker ? markerAccentClass : ''}`}
     >
       <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
         {isAlarm && (
@@ -108,6 +122,11 @@ export function ZoneCard({ channel }: { channel: ChannelViewModel }) {
           <treatment.Icon className="h-4 w-4 shrink-0" />
           <span>{treatment.statusLabel}</span>
         </p>
+        {hasLastReportedMarker && channel.lastReportedActiveAt !== null && (
+          <p className={`mt-1 text-xs font-semibold ${markerTextClass}`}>
+            Last reported {markerWord} at {formatClockTime(channel.lastReportedActiveAt)}
+          </p>
+        )}
       </div>
     </li>
   )

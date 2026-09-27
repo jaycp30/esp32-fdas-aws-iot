@@ -39,23 +39,73 @@ export type ChannelSample =
 
 /** One full telemetry snapshot from the Smart Input Module. */
 export interface DeviceSample {
-  /** When this sample was received by the app (epoch ms). */
-  receivedAt: number
+  /**
+   * When this snapshot was actually taken, epoch ms.
+   *
+   * For live data this is ALWAYS the device's own payload `ts` field
+   * (epoch seconds, converted to ms) - never this browser's arrival time.
+   * That's contract rule C1 (docs/mqtt-contract.md): AWS IoT delivers a
+   * *retained* message to a brand-new subscriber instantly, even if it's
+   * hours old, so judging staleness from arrival time would show a dead
+   * device as freshly alive. Named `reportedAt` rather than `receivedAt`
+   * specifically so that distinction can't get blurred at a call site -
+   * see `deriveDeviceStatus` in data/deriveDeviceState.ts, the one place
+   * this is ever compared against "now".
+   */
+  reportedAt: number
   /** All five channels, always in fixed Z1, Z2, Z3, Z4, MON order. */
   channels: ChannelSample[]
 }
 
 /**
- * Whole-device connectivity, derived from how long ago the last sample
- * arrived. This is a DERIVED value, never something the mock/device sends
- * directly - see `deriveDeviceStatus` for the staleness rule itself.
+ * The DEVICE's own connectivity, from its own signals only: how long ago
+ * its last `state` snapshot claims to be from, and what it last said on
+ * its `status` topic. This says nothing about whether THIS BROWSER can
+ * currently hear it - see `ViewerConnectionState` for that orthogonal
+ * question, and `ConnectivityState` for how the two combine into what the
+ * UI actually renders. This is a DERIVED value, never something the
+ * mock/device sends directly - see `deriveDeviceStatus`.
  */
 export type DeviceStatus = 'ONLINE' | 'OFFLINE'
 
 /**
+ * The two signals a data source (mock or live) reports alongside samples,
+ * shared by data/mockDeviceSource.ts and data/liveDeviceSource.ts so
+ * hooks/useZoneFeed.ts can treat either one identically.
+ *
+ * - `ConnectionPhase`: THIS BROWSER's own MQTT/WebSocket link health, from
+ *   Amplify PubSub's Hub connection-state events in the live source. The
+ *   mock source has no real socket, so it reports a constant 'connected'.
+ * - `DeviceReportedStatus`: the device's own retained `status` topic
+ *   (`online`/`offline`, contract rule C2) - 'unknown' until an explicit
+ *   status message has been seen. The mock source never simulates this
+ *   distinct signal (its "offline" scenarios work purely via staleness),
+ *   so it always reports 'unknown'.
+ */
+export type ConnectionPhase = 'connecting' | 'connected' | 'disconnected'
+export type DeviceReportedStatus = 'online' | 'offline' | 'unknown'
+
+/**
+ * THIS BROWSER's own link to AWS IoT Core - see `ConnectionPhase` above,
+ * uppercased to match the other UI-facing state unions in this file.
+ */
+export type ViewerConnectionState = 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'
+
+/**
+ * The one connectivity value the UI actually branches on. Computed by
+ * `deriveConnectivityState` (data/deriveDeviceState.ts) from DeviceStatus +
+ * ViewerConnectionState + "have we ever received a sample" - see that
+ * function for the combining rules and the priority between the two
+ * different UNKNOWN-causing failure modes (the device itself being
+ * offline/stale, vs. this browser's own connection having dropped).
+ */
+export type ConnectivityState = 'CONNECTING' | 'VIEWER_DISCONNECTED' | 'DEVICE_OFFLINE' | 'ONLINE'
+
+/**
  * The state actually rendered for a channel, after the staleness rule has
  * been applied. This is a superset of the raw states plus UNKNOWN, which
- * only ever appears when the device itself is OFFLINE.
+ * only ever appears when ConnectivityState isn't ONLINE (device offline
+ * or stale, OR this browser's own connection is down).
  */
 export type DisplayState = 'NORMAL' | 'ALARM' | 'TROUBLE' | 'ACTIVE' | 'UNKNOWN'
 
@@ -68,6 +118,18 @@ export interface ChannelViewModel {
   /** e.g. "1" or "M" - printed in the round badge. */
   badge: string
   state: DisplayState
+  /**
+   * Contract rule C3 ("OFFLINE never erases an alarm"): epoch ms of the
+   * `reportedAt` of the last sample in which this channel's raw value was
+   * the "true"/active reading (alarm for a zone, active for MON) - but
+   * ONLY while `state` is currently UNKNOWN. Null whenever the channel
+   * isn't UNKNOWN, AND whenever its last known reading was normal - that
+   * second case is deliberate, not an oversight: a channel last seen
+   * NORMAL gets no marker at all, because "last reported normal" carries
+   * no urgency, and a marker on every quiet zone would bury the ones that
+   * actually matter. See components/ZoneCard.tsx for how this renders.
+   */
+  lastReportedActiveAt: number | null
 }
 
 /** An accessibility announcement queued for one of the two live regions. */
@@ -80,10 +142,11 @@ export interface Announcement {
   key: number
 }
 
-/** The five demo scenarios the "Demo" switcher can select. */
+/** The demo scenarios the "Demo" switcher can select. */
 export type ScenarioId =
   | 'all-normal'
   | 'zone2-alarm'
   | 'multi-alarm'
   | 'monitor-trouble'
   | 'offline'
+  | 'offline-after-alarm'

@@ -20,3 +20,8 @@ pnpm-debug.log*
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Amplify Gen 2 - generated at deploy/sandbox time, never committed. See
+# web/amplify/backend.ts and README.md ("Live vs demo data").
+amplify_outputs.json
+.amplify/

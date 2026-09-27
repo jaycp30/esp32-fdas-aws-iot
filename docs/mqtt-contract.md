@@ -39,9 +39,13 @@ policy: input boards may only publish, output boards may only receive.
 | Topic | Payload | QoS | Retained | Published when |
 |---|---|---|---|---|
 | `fdas/{device_id}/state` | JSON snapshot (§4) | 1 | **yes** | on every input change, and every 30 s (heartbeat) |
-| `fdas/{device_id}/status` | `online` or `offline` (plain text) | 1 | **yes** | `online` right after connecting (birth); `offline` as the last will (unexpected drop) and on clean shutdown |
+| `fdas/{device_id}/status` | `{"v":1,"status":"online"}` or `{"v":1,"status":"offline"}` | 1 | **yes** | `online` right after connecting (birth); `offline` as the last will (unexpected drop) and on clean shutdown |
 
 QoS 1 = at-least-once. AWS IoT Core supports QoS 0 and 1 only.
+
+**Every payload is JSON**, including `status`. Browser MQTT clients (Amplify PubSub) JSON-parse
+every message and silently drop anything else. Plain-text `online`/`offline` (the first
+version, changed 2026-09-27) never reached the web app.
 
 ## 4. State payload
 
@@ -94,8 +98,11 @@ level-triggered idea as the firmware's relay loop. Around 150 bytes per message.
 - **C3. OFFLINE never erases an alarm.** Every input shows UNKNOWN, but an input whose last
   reported value was `true` keeps a marker: *"last reported ALARM at 09:14"*. If the module
   dies mid-alarm (possibly *because* of the fire), the last thing it said must stay visible.
-- **C4.** Drop a snapshot whose `(uptime_s, seq)` is older than the one already shown
-  (QoS 1 can deliver duplicates or late copies).
+- **C4.** Drop a snapshot that is older than the one already shown. QoS 1 can deliver
+  duplicates, and AWS IoT doesn't guarantee order. Order by **`ts` first** (SNTP-synced, so it
+  keeps increasing across reboots), then by `(uptime_s, seq)` for snapshots in the same second.
+  A lower `uptime_s` alone does NOT mean newer: a late copy from before the latest message
+  looks exactly like a reboot, so only `ts` can tell them apart.
 - **C5.** Ignore unknown fields (forward compatibility). Reject an unknown major `v`.
 
 ## 7. Timing: what the phone shows if the module loses power mid-alarm

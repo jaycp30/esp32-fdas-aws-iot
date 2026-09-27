@@ -19,3 +19,18 @@ export function formatRelativeTime(pastMs: number, nowMs: number): string {
   const deltaDays = Math.floor(deltaHours / 24)
   return `${deltaDays}d ago`
 }
+
+/**
+ * Formats an epoch-ms timestamp as a 24-hour local "HH:MM" clock reading,
+ * e.g. "09:14". Used for contract rule C3's "Last reported ALARM at HH:MM"
+ * marker (docs/mqtt-contract.md), which needs a fixed point in time -
+ * unlike formatRelativeTime above, this deliberately does NOT keep
+ * counting up as `now` advances, since "when did this happen" shouldn't
+ * change the longer a card stays UNKNOWN.
+ */
+export function formatClockTime(epochMs: number): string {
+  const date = new Date(epochMs)
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}

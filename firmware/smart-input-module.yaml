@@ -87,19 +87,21 @@ mqtt:
   idf_send_async: true
   # Contract D3: retained online/offline on the status topic. The will is published by
   # AWS only on an UNEXPECTED disconnect, so a clean shutdown/reboot sends its own offline.
+  # JSON, not bare words: the browser's MQTT client (Amplify PubSub) JSON-parses every
+  # message and silently drops anything that isn't valid JSON.
   birth_message:
     topic: fdas/fdas-iot-ane1-input-01/status
-    payload: online
+    payload: '{"v":1,"status":"online"}'
     qos: 1
     retain: true
   will_message:
     topic: fdas/fdas-iot-ane1-input-01/status
-    payload: offline
+    payload: '{"v":1,"status":"offline"}'
     qos: 1
     retain: true
   shutdown_message:
     topic: fdas/fdas-iot-ane1-input-01/status
-    payload: offline
+    payload: '{"v":1,"status":"offline"}'
     qos: 1
     retain: true
   on_connect:

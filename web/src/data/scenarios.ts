@@ -14,6 +14,11 @@ export const SCENARIOS: ScenarioMeta[] = [
   { id: 'multi-alarm', label: 'Multiple alarms (Z1 + Z3)', description: 'Two zones in alarm at once.' },
   { id: 'monitor-trouble', label: 'Trouble on Monitor', description: 'MON reports a supervisory fault.' },
   { id: 'offline', label: 'Module offline', description: 'No recent telemetry - zone states unknown.' },
+  {
+    id: 'offline-after-alarm',
+    label: 'Offline after an alarm',
+    description: 'Zone 02 alarmed, then the module went silent - shows the "last reported ALARM" marker (C3).',
+  },
 ]
 
 /**
@@ -40,6 +45,13 @@ function buildChannels(
  * the device is OFFLINE, and the module going offline is simulated by
  * backdating the sample's timestamp in mockDeviceSource, not by changing
  * these readings.
+ *
+ * "offline-after-alarm" is the one exception: its reading DOES matter, on
+ * purpose. It's still forced to UNKNOWN the same way, but
+ * deriveChannelViewModels also reads the last reading underneath that
+ * UNKNOWN state to decide whether to show a C3 "last reported ALARM"
+ * marker - so this scenario needs an actual alarm baked into the backdated
+ * sample for that marker to have something to show.
  */
 export const SCENARIO_CHANNELS: Record<ScenarioId, ChannelSample[]> = {
   'all-normal': buildChannels({}),
@@ -47,4 +59,5 @@ export const SCENARIO_CHANNELS: Record<ScenarioId, ChannelSample[]> = {
   'multi-alarm': buildChannels({ z1: 'alarm', z3: 'alarm' }),
   'monitor-trouble': buildChannels({ mon: 'trouble' }),
   offline: buildChannels({}),
+  'offline-after-alarm': buildChannels({ z2: 'alarm' }),
 }

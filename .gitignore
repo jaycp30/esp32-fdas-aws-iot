@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Browser-automation artifacts (screenshots, console logs) from the Playwright MCP tool
+.playwright-mcp/
+
 # Local Claude Code settings (machine-specific, not project code)
 .claude/
 

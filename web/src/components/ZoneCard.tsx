@@ -73,9 +73,13 @@ export function ZoneCard({ channel }: { channel: ChannelViewModel }) {
   const treatment = TREATMENTS[channel.state]
   const isAlarm = channel.state === 'ALARM'
 
+  // No colour transition on purpose: a state change (especially into ALARM)
+  // must be readable the instant it happens. A fade left the heading white on
+  // a still-white card for ~300ms, because the heading's colour switches
+  // instantly while the card background was still animating.
   return (
     <li
-      className={`flex items-center gap-4 rounded-xl border p-4 transition-colors duration-300 sm:p-5 ${treatment.card}`}
+      className={`flex items-center gap-4 rounded-xl border p-4 sm:p-5 ${treatment.card}`}
     >
       <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
         {isAlarm && (

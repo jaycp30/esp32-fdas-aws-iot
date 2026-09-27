@@ -1,0 +1,299 @@
+# Board: Espressif ESP32 Dev Module
+# Definition: definitions/boards/esp32dev/manifest.yaml
+#
+# Smart Input Module: supplementary remote annunciator input for an FDAS panel.
+# Hardware and the initial ESP32 firmware by Jake, the project's hardware engineer;
+# this config builds on his first ESPHome version.
+#
+# Stage 1 (bench): read the zone inputs, drive the FIRE/MON relays and the RGB LED,
+# and log over USB. No cloud/MQTT yet. Pin map and hardware notes: docs/pinmap.md
+# in the project folder.
+#
+# All credentials and keys live in secrets.yaml (the !secret lines), so this file
+# is safe to copy into the public repo.
+
+esphome:
+  name: smart-input-module
+  friendly_name: Smart Input Module
+
+esp32:
+  variant: esp32
+  framework:
+    # ESPHome builds on Espressif's own ESP-IDF instead of Arduino.
+    # MQTT client-certificate TLS (needed for AWS IoT Core later) is only available here.
+    type: esp-idf
+
+# Logs go to the USB serial port (and to the dashboard over Wi-Fi).
+# ESPHome logs binary-sensor changes only at VERBOSE, so each input below has an
+# explicit on_state log line instead. That's how we verify the breadboard wiring:
+# press each button and read the log.
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    # A bare "encryption:" reuses the API key above. Wi-Fi firmware uploads are then
+    # both authenticated (nobody else on a shared workshop network can flash the
+    # board) and encrypted (the image contains the Wi-Fi password).
+    encryption:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # New workshop, unknown Wi-Fi: after ~1 minute without a connection the board
+  # starts this hotspot. Join it from a phone and pick the new network in the
+  # captive portal page. No reflash needed.
+  ap:
+    ssid: Smart Input Mod Fallback Hotspot
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+# ---------------------------------------------------------------------------
+# Inputs
+#
+# Signal path per channel: dry contact -> PC817 optocoupler -> (74HC04 on the v4
+# board) -> GPIO. Energized contact = GPIO HIGH = sensor ON.
+#
+# Why these settings:
+# - use_interrupt: false. ESPHome defaults to hardware interrupts, but GPIO36/39
+#   (Zone 1/2) can fire phantom edges while Wi-Fi is on (ESP32 errata). Polling
+#   avoids that on every zone, so all channels behave identically.
+# - No pull resistors on GPIO34-39: those pins have none in hardware, and the
+#   board actively drives them.
+# - delayed_on 50ms / delayed_off 1s: "quick to alarm, slow to clear". 50ms rides
+#   out contact bounce without meaningfully delaying an alarm. The longer off-delay
+#   stops a flickering alarm contact from reporting a string of brief "clears".
+# - inverted: false = a CLOSED contact reads as ON. If the panel's zone relays are
+#   wired normally-closed (the fail-safe choice), flip to true: then an alarm OR a
+#   cut wire reads as ON, never as a silent "normal".
+# - on_state + trigger_on_initial_state: log every change, AND the first reading
+#   after boot, so a floating (unconnected) input shows up in the log right away.
+#   Logging only: the relays and LED are driven by the level-triggered loop below.
+# ---------------------------------------------------------------------------
+binary_sensor:
+  - platform: gpio
+    id: zone_1
+    name: "Zone 1"
+    pin:
+      number: GPIO36
+      mode:
+        input: true
+      inverted: false
+    use_interrupt: false
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 1s
+    trigger_on_initial_state: true
+    on_state:
+      - logger.log:
+          format: "Zone 1 (GPIO36) -> %s"
+          args: ['x ? "ON" : "OFF"']
+
+  - platform: gpio
+    id: zone_2
+    name: "Zone 2"
+    pin:
+      number: GPIO39
+      mode:
+        input: true
+      inverted: false
+    use_interrupt: false
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 1s
+    trigger_on_initial_state: true
+    on_state:
+      - logger.log:
+          format: "Zone 2 (GPIO39) -> %s"
+          args: ['x ? "ON" : "OFF"']
+
+  - platform: gpio
+    id: zone_3
+    name: "Zone 3"
+    pin:
+      number: GPIO34
+      mode:
+        input: true
+      inverted: false
+    use_interrupt: false
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 1s
+    trigger_on_initial_state: true
+    on_state:
+      - logger.log:
+          format: "Zone 3 (GPIO34) -> %s"
+          args: ['x ? "ON" : "OFF"']
+
+  - platform: gpio
+    id: zone_4
+    name: "Zone 4"
+    pin:
+      number: GPIO35
+      mode:
+        input: true
+      inverted: false
+    use_interrupt: false
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 1s
+    trigger_on_initial_state: true
+    on_state:
+      - logger.log:
+          format: "Zone 4 (GPIO35) -> %s"
+          args: ['x ? "ON" : "OFF"']
+
+  # MON (what it monitors is not confirmed yet). GPIO32 has internal pulls, and
+  # the breadboard has no MON channel, so the internal pull-down keeps the pin
+  # from floating. On the real board the circuit drives the pin and the weak
+  # internal pull-down is harmless.
+  - platform: gpio
+    id: mon_input
+    name: "Monitor"
+    pin:
+      number: GPIO32
+      mode:
+        input: true
+        pulldown: true
+      inverted: false
+    use_interrupt: false
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 1s
+    trigger_on_initial_state: true
+    on_state:
+      - logger.log:
+          format: "Monitor (GPIO32) -> %s"
+          args: ['x ? "ON" : "OFF"']
+
+  # KEY1 push button: pressed = HIGH. The PCB has a 10k pull-down; the internal
+  # pull-down covers the breadboard, which has no KEY1 wired.
+  - platform: gpio
+    id: key1
+    name: "Button"
+    pin:
+      number: GPIO27
+      mode:
+        input: true
+        pulldown: true
+    filters:
+      - delayed_on: 30ms
+      - delayed_off: 30ms
+    trigger_on_initial_state: true
+    on_state:
+      - logger.log:
+          format: "Button KEY1 (GPIO27) -> %s"
+          args: ['x ? "ON" : "OFF"']
+
+output:
+  # -------------------------------------------------------------------------
+  # RGB status LED (common cathode, HIGH = on). Not fitted on the breadboard;
+  # configured now so the PCB works without changes.
+  # -------------------------------------------------------------------------
+  - platform: ledc
+    id: led_red
+    pin: GPIO19
+  - platform: ledc
+    id: led_green
+    pin: GPIO18
+  - platform: ledc
+    id: led_blue
+    pin: GPIO23
+
+  # -------------------------------------------------------------------------
+  # Relay outputs on the "IN" connector -> 2-channel relay module IN1/IN2
+  # (set the module's jumper to HIGH-level trigger). Carried over from Jake's
+  # original config: IN1 = common FIRE (any zone), IN2 = MON.
+  # The PCB's 10k pull-downs keep both relays off while the ESP32 boots.
+  # -------------------------------------------------------------------------
+  - platform: gpio
+    id: relay_fire
+    pin: GPIO17
+  - platform: gpio
+    id: relay_mon
+    pin: GPIO16
+
+# Toggled every tick to make the blue LED blink.
+globals:
+  - id: blink_on
+    type: bool
+    initial_value: "false"
+
+# ---------------------------------------------------------------------------
+# Output logic, re-evaluated twice a second.
+#
+# This is LEVEL-triggered on purpose: every tick sets each output from the
+# CURRENT input states, like a reconciliation loop. An edge-triggered version
+# (on_state) doesn't fire for the first reading after boot, so a reboot during
+# an active alarm would leave the FIRE relay off until some zone changed again.
+# Here, the outputs are correct within 0.5s of boot, whatever happened before.
+#
+# RGB LED priority (an active input always wins, so a Wi-Fi problem can never
+# hide an alarm on the local LED):
+#   any zone or MON active -> solid red
+#   Wi-Fi not connected    -> blinking blue (1 Hz)
+#   otherwise              -> solid green
+# ---------------------------------------------------------------------------
+interval:
+  - interval: 500ms
+    then:
+      - lambda: id(blink_on) = !id(blink_on);
+
+      # FIRE relay: on while any zone (not MON) is active.
+      - if:
+          condition:
+            or:
+              - binary_sensor.is_on: zone_1
+              - binary_sensor.is_on: zone_2
+              - binary_sensor.is_on: zone_3
+              - binary_sensor.is_on: zone_4
+          then:
+            - output.turn_on: relay_fire
+          else:
+            - output.turn_off: relay_fire
+
+      # MON relay: follows the MON input.
+      - if:
+          condition:
+            binary_sensor.is_on: mon_input
+          then:
+            - output.turn_on: relay_mon
+          else:
+            - output.turn_off: relay_mon
+
+      # RGB status LED.
+      - if:
+          condition:
+            or:
+              - binary_sensor.is_on: zone_1
+              - binary_sensor.is_on: zone_2
+              - binary_sensor.is_on: zone_3
+              - binary_sensor.is_on: zone_4
+              - binary_sensor.is_on: mon_input
+          then:
+            - output.turn_on: led_red
+            - output.turn_off: led_green
+            - output.turn_off: led_blue
+          else:
+            - if:
+                condition:
+                  wifi.connected:
+                then:
+                  - output.turn_off: led_red
+                  - output.turn_on: led_green
+                  - output.turn_off: led_blue
+                else:
+                  - output.turn_off: led_red
+                  - output.turn_off: led_green
+                  - if:
+                      condition:
+                        lambda: return id(blink_on);
+                      then:
+                        - output.turn_on: led_blue
+                      else:
+                        - output.turn_off: led_blue

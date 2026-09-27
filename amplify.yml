@@ -1,0 +1,87 @@
+# AWS Amplify Hosting build spec — esp32-fdas-aws-iot (monorepo)
+#
+# This repo is a monorepo: the React/Vite web app lives in `web/`, and ESP32
+# firmware (ESPHome YAML) lives elsewhere in the repo (e.g. an `esphome/`
+# folder). Amplify only builds and hosts the `web/` app. The `appRoot: web`
+# key below tells Amplify to treat `web/` as the working directory for every
+# command and artifact path in this file — it does not touch anything else
+# in the repo.
+#
+# IMPORTANT: when connecting this repo for the first time in the Amplify
+# console, you must also check "My app is a monorepo" and enter `web` as the
+# app root on the "Add repository branch" page. That is what makes the
+# console set the AMPLIFY_MONOREPO_APP_ROOT environment variable to `web` —
+# it must match the `appRoot` value below or the build fails with a
+# monorepo-root mismatch error. See docs/amplify-hosting.md for the exact
+# console steps.
+#
+# CURRENT STATE: FRONTEND-ONLY. The app is a mockup with mock data, so this
+# file has no `backend:` phase yet. A Gen 2 backend (an `amplify/` folder
+# inside `web/`, deployed with `npx ampx pipeline-deploy`) is a deliberate
+# later step. See the "FUTURE" comment block at the bottom of this file for
+# what that phase will look like — it must run BEFORE the frontend phase,
+# because `pipeline-deploy` generates `web/amplify_outputs.json`, which the
+# frontend build then reads to know its API endpoints.
+
+version: 1
+applications:
+  - appRoot: web
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # Pin the Node version the Amplify build container uses, so a
+            # future change to Amplify's default image can't silently change
+            # our build. Keep this in sync with local dev (Node 22.x).
+            - nvm use 22
+            # `npm ci` (not `npm install`) installs exactly what's pinned in
+            # package-lock.json. It's reproducible and fails loudly if the
+            # lockfile and package.json ever drift apart, instead of quietly
+            # resolving something different than what you tested locally.
+            - npm ci --cache .npm --prefer-offline
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        # Vite's default build output directory (relative to appRoot, i.e.
+        # this resolves to web/dist).
+        baseDirectory: dist
+        files:
+          - '**/*'
+      cache:
+        # Cache npm's download cache and node_modules between builds so
+        # `npm ci` doesn't re-download every package from the registry on
+        # every single build.
+        paths:
+          - .npm/**/*
+          - node_modules/**/*
+
+# -----------------------------------------------------------------------------
+# FUTURE: adding the Gen 2 backend phase
+# -----------------------------------------------------------------------------
+# Once `web/amplify/` exists (an Amplify Gen 2 backend defined in TypeScript —
+# data, auth, functions, etc.), add a `backend:` phase ABOVE `frontend:`
+# inside the `applications[0]` entry above. It looks like this:
+#
+# backend:
+#   phases:
+#     build:
+#       commands:
+#         - npm ci --cache .npm --prefer-offline
+#         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
+#
+# $AWS_BRANCH and $AWS_APP_ID are built-in Amplify environment variables —
+# Amplify injects them at build time, you never set them yourself.
+# `pipeline-deploy` is the CI counterpart to `ampx sandbox`: it deploys this
+# branch's own backend (its own AppSync API, Lambdas, DynamoDB tables, etc.,
+# separate from anyone's local sandbox) and writes a fresh
+# `web/amplify_outputs.json`. That file should stay gitignored — it's
+# generated here, at build time, which is exactly why the backend phase must
+# run before the frontend one.
+#
+# Adding a backend phase also means the Amplify app needs an IAM service
+# role: `pipeline-deploy` needs permission to create/update AppSync APIs,
+# Lambda functions, DynamoDB tables, S3 buckets, and IAM roles on your
+# behalf. The current frontend-only version of this file does NOT need a
+# service role — that's only required once a backend phase exists. See
+# docs/amplify-hosting.md for details.

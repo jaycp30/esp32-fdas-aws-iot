@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens for FDAS Monitoring.
+ *
+ * Palette: warm-monochrome "minimalist-ui" house style (canvas / surface /
+ * ink), EXCEPT for the four status colours, which are a deliberate
+ * departure — see the project brief. Life-safety status must read as
+ * conventional red/amber/green/grey, not as washed-out editorial pastels,
+ * so an operator recognises "fire alarm" at a glance the same way they
+ * would on the physical panel.
+ *
+ * Every text/background and status colour pairing below was checked against
+ * WCAG 2.1 contrast math (4.5:1 body text, 3:1 large text / UI elements).
+ * The exact ratios are recorded in the project README so they don't have to
+ * be re-derived by eye later.
+ *
+ * `--color-ink-soft` (#55524C) intentionally replaces the minimalist-ui
+ * skill's default secondary-text grey (#787774), which only reaches
+ * 4.14-4.48:1 on this canvas and fails the 4.5:1 floor.
+ */
+@theme {
+  --color-canvas: #f7f6f3;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f0f0ee;
+  --color-line: #eaeaea;
+
+  --color-ink: #1c1b1a;
+  --color-ink-soft: #55524c;
+
+  /* Status colours - the one deliberate exception to the muted palette. */
+  --color-alarm: #b3261e;
+  --color-alarm-tint: #fdebec;
+  --color-trouble: #92400e;
+  --color-trouble-tint: #fbf3db;
+  --color-normal: #1e6b3a;
+  --color-normal-tint: #edf3ec;
+  --color-offline: #4b4b4b;
+  --color-offline-strong: #3d3b37;
+  --color-offline-tint: #ededeb;
+
+  /*
+   * One primary font family (system sans) per the house rule that type
+   * *contrast* should come from size/weight, not from mixing families.
+   * Monospace is the deliberate second family, reserved for technical
+   * readouts (zone numbers, timestamps) so live data reads distinctly from
+   * UI chrome - the same convention real panel displays use. No external
+   * font files are loaded: system stacks keep the app dependency-free and
+   * available offline.
+   */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Visible keyboard focus everywhere, independent of mouse hover styles. */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  /* Standard visually-hidden utility for aria-live regions and skip text:
+     content stays in the accessibility tree but takes no visual space. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}

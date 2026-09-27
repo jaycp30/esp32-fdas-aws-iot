@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Local Claude Code settings (machine-specific, not project code)
+.claude/
+
+# Session handoff notes and my personal learning checklist (local, not project documentation)
+handoff_*.md
+understanding.md
+
+# The co-worker's hardware design files and raw exports.
+# This repo is PUBLIC: these stay local until the board's designer agrees to publish them.
+easyeda-backup/
+BackupProjects_*.zip
+Schematic_*.pdf
+BOM_*.xlsx
+
+# ESPHome secrets and build output, in case an ESPHome folder is ever pointed at firmware/.
+secrets.yaml
+.esphome/
+
+# Raw flash dumps of boards before we reflash them. They can contain Wi-Fi
+# passwords and other people's firmware.
+backups/
+
+# Raw hardware photos in the project root
+/*.jpg
+
+# docs/ stays local for now: it names the co-worker, details their board design, and the
+# hosting runbook contains the AWS account ID and personal account names.
+docs/

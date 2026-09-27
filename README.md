@@ -29,6 +29,28 @@ and commit:
 firmware/sync-from-esphome.sh
 ```
 
+## Deploying the web app
+
+The web app is hosted on AWS Amplify (region `ap-northeast-1`). Live mockup:
+https://main.d3ar5fu2alxp7w.amplifyapp.com
+
+**Pushing to `main` does not deploy.** Automatic builds are turned off on purpose, so commits
+that only touch `firmware/`, docs or `.gitignore` never rebuild the site. After pushing a change
+under `web/` (or to `amplify.yml`), start the deployment yourself:
+
+```bash
+aws amplify start-job --app-id d3ar5fu2alxp7w --branch-name main --job-type RELEASE --region ap-northeast-1
+```
+
+This builds and deploys the latest commit on `main` (about 1–2 minutes). To check the result
+(`SUCCEED` means it's live):
+
+```bash
+aws amplify list-jobs --app-id d3ar5fu2alxp7w --branch-name main --max-items 1 --region ap-northeast-1
+```
+
+Both commands need AWS credentials for the account that hosts the app.
+
 ## Status
 
 Early prototype. The input module firmware runs on a breadboard prototype and passes its

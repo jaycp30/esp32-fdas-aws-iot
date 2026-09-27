@@ -40,7 +40,14 @@ applications:
             # Same Node as local dev and the frontend phase: this phase runs FIRST and
             # installs node_modules for both, so it must not use the image's default Node.
             - nvm use 22
-            - npm ci --cache .npm --prefer-offline
+            # `npm install`, not `npm ci`, on purpose. @aws-amplify/backend pulls in
+            # data-construct / graphql-api-construct, which ship BUNDLED copies of older
+            # sub-packages (@aws-cdk/toolkit-lib, @opentelemetry/*). `npm ci`'s strict
+            # lockfile check can't validate bundled dependencies and fails with
+            # "Missing: ... from lock file" even on a freshly generated lockfile
+            # (reproduced 2026-09-27 with the latest Amplify packages). `npm install`
+            # still installs the versions pinned in package-lock.json.
+            - npm install --cache .npm --prefer-offline --no-audit --no-fund
             - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     frontend:
       phases:
@@ -50,7 +57,7 @@ applications:
             # future change to Amplify's default image can't silently change
             # our build. Keep this in sync with local dev (Node 22.x).
             - nvm use 22
-            # No `npm ci` here: the backend phase above already ran it in
+            # No install here: the backend phase above already ran it in
             # this same build environment (Gen 2 monorepo builds share one
             # container/workspace across phases), so re-installing here
             # would just be redundant work.

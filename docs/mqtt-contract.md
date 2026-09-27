@@ -103,7 +103,7 @@ level-triggered idea as the firmware's relay loop. Around 150 bytes per message.
 | Time | What happens | Phone shows |
 |---|---|---|
 | t = 0 | Zone 2 in alarm; module loses power | Zone 2 ALARM |
-| ~1.5 × keep-alive | Broker notices the silence and publishes the retained last will `offline` | **OFFLINE**; all inputs UNKNOWN, Zone 2 with "last reported ALARM" |
+| **~47 s** (measured) | Broker notices the silence (1.5 × the 30 s keep-alive) and publishes the retained last will `offline` | **OFFLINE**; all inputs UNKNOWN, Zone 2 with "last reported ALARM" |
 | 90 s | Backstop: `ts` is now stale (C1). Covers a missed last will or a stuck pipeline | Same, even if the last will never arrived |
 
 ## 8. AWS IoT policy (sketch, finalized in step 3)
@@ -114,14 +114,19 @@ Least privilege:
   and `.../status`;
 - **no** `iot:Subscribe` / `iot:Receive`.
 
-## 9. To verify in step 3 (don't assume)
+## 9. Verified in step 3 (2026-09-27, breadboard + AWS IoT Core Tokyo)
 
-- AWS IoT keep-alive limits, and the **measured** delay from pulling the power to `offline`.
-- The retained-message limits for the account (one per topic; there's an account-wide cap).
-- ESPHome MQTT client-certificate TLS to AWS IoT on the ESP-IDF framework: the connection
-  works, and nothing outside D4/D5 gets published.
-- Pricing: about 90k messages per device per month (a 30 s heartbeat plus changes). Confirm
-  it's cents, not dollars.
+- **TLS + policy:** ESPHome (ESP-IDF) connects over mutual TLS on port 8883 with the CSR-based
+  certificate. The least-privilege policy accepted every publish (no disconnects), so nothing
+  outside D4/D5 was published.
+- **Keep-alive 30 s** is accepted. Pulling the power produced the retained `offline` last
+  will after **47 s** (≈ 1.5 × keep-alive).
+- **End-to-end latency:** a button press showed up in AWS's retained `state` within about
+  1 s. The release showed up about 1 s later (the 1 s slow-to-clear filter plus transit).
+- **Retained messages:** `state` (QoS 1, snapshot with a fresh `ts`) and `status`
+  (`online`) are both readable with `aws iot-data get-retained-message`.
+- **Pricing (Tokyo):** $1.20 per million messages, $0.096 per million connection-minutes
+  → about **$0.12 per device per month** at a 30 s heartbeat.
 
 ## 10. Decisions and open items
 

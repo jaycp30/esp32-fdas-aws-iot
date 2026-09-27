@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  FDAS input module identity in AWS IoT Core: one thing, its certificate (from a CSR, so the
+  private key never leaves the maker's machine) and a least-privilege policy that implements
+  docs/mqtt-contract.md (publish-only to the device's own two topics).
+
+# Deploy one stack per physical input board (stack name = thing name), e.g.:
+#   aws cloudformation deploy --stack-name fdas-iot-ane1-input-01 \
+#     --template-file infra/iot-input-device.yaml --region ap-northeast-1 \
+#     --parameter-overrides ThingName=fdas-iot-ane1-input-01 "CertificateSigningRequest=$(cat device.csr)"
+#
+# Device identity lives in its own long-lived stack on purpose: it must survive web-app
+# redeploys and must not be duplicated per Amplify branch/sandbox.
+
+Parameters:
+  ThingName:
+    Type: String
+    Description: Device ID = AWS IoT thing name = MQTT client ID (see docs/mqtt-contract.md §2).
+    AllowedPattern: "^fdas-iot-ane1-input-[0-9]{2}$"
+    ConstraintDescription: Must follow the naming scheme fdas-iot-ane1-input-NN.
+  CertificateSigningRequest:
+    Type: String
+    Description: PEM certificate signing request generated on the maker's machine. Not secret.
+    NoEcho: false
+
+Resources:
+  Thing:
+    Type: AWS::IoT::Thing
+    Properties:
+      ThingName: !Ref ThingName
+
+  # The device's login. Created from a CSR: AWS signs the public key; the private key is
+  # generated locally and never sent anywhere.
+  Certificate:
+    Type: AWS::IoT::Certificate
+    Properties:
+      CertificateSigningRequest: !Ref CertificateSigningRequest
+      Status: ACTIVE
+
+  # Least privilege, per docs/mqtt-contract.md §8.
+  # ${!iot:Connection.Thing.ThingName} is an AWS IoT policy variable (the "!" stops
+  # CloudFormation's !Sub from trying to replace it). It resolves to the name of the thing
+  # attached to the connecting certificate, so a device can only ever use its OWN client ID
+  # and its OWN topics, even if its certificate were copied onto another device.
+  DevicePolicy:
+    Type: AWS::IoT::Policy
+    Properties:
+      PolicyName: !Sub "${ThingName}-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ConnectOnlyAsItself
+            Effect: Allow
+            Action: iot:Connect
+            Resource: !Sub "arn:aws:iot:${AWS::Region}:${AWS::AccountId}:client/${!iot:Connection.Thing.ThingName}"
+            Condition:
+              Bool:
+                iot:Connection.Thing.IsAttached: "true"
+          # Publish + retain is needed for the state/status messages AND for the retained
+          # last-will "offline", which the broker publishes on the device's behalf.
+          - Sid: PublishOwnTopicsOnly
+            Effect: Allow
+            Action:
+              - iot:Publish
+              - iot:RetainPublish
+            Resource:
+              - !Sub "arn:aws:iot:${AWS::Region}:${AWS::AccountId}:topic/fdas/${!iot:Connection.Thing.ThingName}/state"
+              - !Sub "arn:aws:iot:${AWS::Region}:${AWS::AccountId}:topic/fdas/${!iot:Connection.Thing.ThingName}/status"
+          # Deliberately no iot:Subscribe / iot:Receive: the device takes no commands.
+
+  PolicyToCertificate:
+    Type: AWS::IoT::PolicyPrincipalAttachment
+    Properties:
+      PolicyName: !Ref DevicePolicy
+      Principal: !GetAtt Certificate.Arn
+
+  CertificateToThing:
+    Type: AWS::IoT::ThingPrincipalAttachment
+    Properties:
+      ThingName: !Ref Thing
+      Principal: !GetAtt Certificate.Arn
+
+Outputs:
+  ThingName:
+    Value: !Ref Thing
+  CertificateId:
+    Description: Use with `aws iot describe-certificate` to fetch the signed certificate PEM.
+    Value: !GetAtt Certificate.Id
+  CertificateArn:
+    Value: !GetAtt Certificate.Arn
+  PolicyName:
+    Value: !Ref DevicePolicy

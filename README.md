@@ -14,6 +14,8 @@ zone status over the internet to a web app on phones and laptops.
 | Path | What it is |
 |------|------------|
 | `firmware/` | ESP32 input module firmware: an ESPHome device configuration (ESP-IDF framework). Credentials are `!secret` references only; real values live in a local `secrets.yaml` that is never committed. |
+| `docs/mqtt-contract.md` | The MQTT contract: what the input module publishes to AWS IoT Core and the rules every consumer follows. |
+| `infra/iot-input-device.yaml` | CloudFormation for one input board's AWS IoT identity: thing, certificate (from a locally generated key) and a publish-only, least-privilege policy. |
 | `web/` | FDAS Monitoring web app (React + Vite + TypeScript). Currently a mockup with simulated data. |
 | `amplify.yml` | AWS Amplify Hosting build spec (monorepo, app root `web/`). |
 
@@ -53,9 +55,10 @@ Both commands need AWS credentials for the account that hosts the app.
 
 ## Status
 
-Early prototype. The input module firmware runs on a breadboard prototype and passes its
-bench test (all built zone channels read correctly). The web app runs on simulated data;
-nothing is connected to a real panel yet.
+Early prototype. The input module runs on a breadboard prototype, passes its bench test, and
+publishes zone state to AWS IoT Core (Tokyo). A button press reaches AWS in about 1 s, and a
+power loss shows as `offline` after about 47 s. The web app still runs on simulated data; wiring
+it to the live feed is next. Nothing is connected to a real panel yet.
 
 ## Credits
 

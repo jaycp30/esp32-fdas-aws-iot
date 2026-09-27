@@ -17,7 +17,15 @@ BOM_*.xlsx
 
 # ESPHome secrets and build output, in case an ESPHome folder is ever pointed at firmware/.
 secrets.yaml
+secrets.yaml.bak-*
 .esphome/
+
+# Device private keys and certificate files. They live in ~/esphome/certs/, never in the
+# repo; these patterns are a safety net against copying one in by accident.
+*.key
+*.pem
+*.crt
+*.csr
 
 # Raw flash dumps of boards before we reflash them. They can contain Wi-Fi
 # passwords and other people's firmware.

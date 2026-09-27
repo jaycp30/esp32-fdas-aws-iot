@@ -5,9 +5,9 @@
 # Hardware and the initial ESP32 firmware by Jake, the project's hardware engineer;
 # this config builds on his first ESPHome version.
 #
-# Stage 1 (bench): read the zone inputs, drive the FIRE/MON relays and the RGB LED,
-# and log over USB. No cloud/MQTT yet. Pin map and hardware notes: docs/pinmap.md
-# in the project folder.
+# Reads the zone inputs, drives the FIRE/MON relays and the RGB LED locally, and
+# publishes the zone state to AWS IoT Core following docs/mqtt-contract.md (v1).
+# Local outputs never depend on the network: they keep working with no Wi-Fi or cloud.
 #
 # All credentials and keys live in secrets.yaml (the !secret lines), so this file
 # is safe to copy into the public repo.
@@ -53,6 +53,59 @@ wifi:
 
 captive_portal:
 
+# Real-world clock for the "ts" field (contract D1: nothing is published until it's synced,
+# because consumers judge staleness from ts, contract C1).
+time:
+  - platform: sntp
+    id: sntp_time
+    on_time_sync:
+      - script.execute: publish_state
+
+# ---------------------------------------------------------------------------
+# AWS IoT Core (docs/mqtt-contract.md). TLS with a device certificate on port 8883.
+# The private key was generated on the maker's Mac and only exists in secrets.yaml.
+# ---------------------------------------------------------------------------
+mqtt:
+  id: mqtt_client
+  broker: !secret mqtt_broker
+  port: 8883
+  # Must equal the AWS IoT thing name: the device policy only allows connecting as
+  # ${iot:Connection.Thing.ThingName}.
+  client_id: fdas-iot-ane1-input-01
+  certificate_authority: !secret aws_root_ca
+  client_certificate: !secret mqtt_client_cert
+  client_certificate_key: !secret mqtt_client_key
+  # Contract D5: switch off everything ESPHome would publish/subscribe on its own.
+  # AWS IoT disconnects a client that touches a topic outside its policy.
+  discovery: false
+  discover_ip: false
+  topic_prefix: null
+  log_topic: null
+  keepalive: 30s
+  # Publish from a separate task, so a slow or broken network can never stall the
+  # main loop that drives the local FIRE/MON relays and LED.
+  idf_send_async: true
+  # Contract D3: retained online/offline on the status topic. The will is published by
+  # AWS only on an UNEXPECTED disconnect, so a clean shutdown/reboot sends its own offline.
+  birth_message:
+    topic: fdas/fdas-iot-ane1-input-01/status
+    payload: online
+    qos: 1
+    retain: true
+  will_message:
+    topic: fdas/fdas-iot-ane1-input-01/status
+    payload: offline
+    qos: 1
+    retain: true
+  shutdown_message:
+    topic: fdas/fdas-iot-ane1-input-01/status
+    payload: offline
+    qos: 1
+    retain: true
+  on_connect:
+    # Refresh the retained snapshot immediately after every (re)connect.
+    - script.execute: publish_state
+
 # ---------------------------------------------------------------------------
 # Inputs
 #
@@ -93,6 +146,7 @@ binary_sensor:
       - logger.log:
           format: "Zone 1 (GPIO36) -> %s"
           args: ['x ? "ON" : "OFF"']
+      - script.execute: publish_state
 
   - platform: gpio
     id: zone_2
@@ -111,6 +165,7 @@ binary_sensor:
       - logger.log:
           format: "Zone 2 (GPIO39) -> %s"
           args: ['x ? "ON" : "OFF"']
+      - script.execute: publish_state
 
   - platform: gpio
     id: zone_3
@@ -129,6 +184,7 @@ binary_sensor:
       - logger.log:
           format: "Zone 3 (GPIO34) -> %s"
           args: ['x ? "ON" : "OFF"']
+      - script.execute: publish_state
 
   - platform: gpio
     id: zone_4
@@ -147,6 +203,7 @@ binary_sensor:
       - logger.log:
           format: "Zone 4 (GPIO35) -> %s"
           args: ['x ? "ON" : "OFF"']
+      - script.execute: publish_state
 
   # MON (what it monitors is not confirmed yet). GPIO32 has internal pulls, and
   # the breadboard has no MON channel, so the internal pull-down keeps the pin
@@ -170,6 +227,7 @@ binary_sensor:
       - logger.log:
           format: "Monitor (GPIO32) -> %s"
           args: ['x ? "ON" : "OFF"']
+      - script.execute: publish_state
 
   # KEY1 push button: pressed = HIGH. The PCB has a 10k pull-down; the internal
   # pull-down covers the breadboard, which has no KEY1 wired.
@@ -218,11 +276,59 @@ output:
     id: relay_mon
     pin: GPIO16
 
-# Toggled every tick to make the blue LED blink.
 globals:
+  # Toggled every tick to make the blue LED blink.
   - id: blink_on
     type: bool
     initial_value: "false"
+  # Contract "seq": +1 per published snapshot, restarts at 0 on reboot.
+  - id: publish_seq
+    type: uint32_t
+    initial_value: "0"
+
+# ---------------------------------------------------------------------------
+# Publish one full state snapshot (docs/mqtt-contract.md §4).
+# Called on every input change, every 30 s (heartbeat), after every MQTT
+# (re)connect and on the first clock sync.
+# ---------------------------------------------------------------------------
+script:
+  - id: publish_state
+    mode: queued
+    then:
+      - if:
+          # Contract D1: never publish a placeholder. Every input must have a real
+          # reading, the clock must be synced (ts), and MQTT must be connected.
+          condition:
+            lambda: |-
+              return id(sntp_time).now().is_valid()
+                  && id(zone_1).has_state() && id(zone_2).has_state()
+                  && id(zone_3).has_state() && id(zone_4).has_state()
+                  && id(mon_input).has_state()
+                  && id(mqtt_client).is_connected();
+          then:
+            - lambda: id(publish_seq) += 1;
+            - mqtt.publish_json:
+                topic: fdas/fdas-iot-ane1-input-01/state
+                qos: 1
+                retain: true
+                payload: |-
+                  root["v"] = 1;
+                  root["device"] = "fdas-iot-ane1-input-01";
+                  root["ts"] = (int64_t) id(sntp_time).now().timestamp;
+                  root["seq"] = id(publish_seq);
+                  // 64-bit microsecond timer: no 49-day wrap like millis().
+                  root["uptime_s"] = (int64_t) (esp_timer_get_time() / 1000000);
+                  root["rssi"] = wifi::global_wifi_component->wifi_rssi();
+                  // Raw contact state; wording like ALARM/ACTIVE belongs to the app.
+                  JsonObject inputs = root["inputs"].to<JsonObject>();
+                  inputs["z1"] = id(zone_1).state;
+                  inputs["z2"] = id(zone_2).state;
+                  inputs["z3"] = id(zone_3).state;
+                  inputs["z4"] = id(zone_4).state;
+                  inputs["mon"] = id(mon_input).state;
+            - logger.log:
+                format: "Published state seq=%u"
+                args: ["id(publish_seq)"]
 
 # ---------------------------------------------------------------------------
 # Output logic, re-evaluated twice a second.
@@ -297,3 +403,9 @@ interval:
                         - output.turn_on: led_blue
                       else:
                         - output.turn_off: led_blue
+
+  # Contract D2 heartbeat: a full snapshot every 30 s even when nothing changes.
+  # Consumers treat 90 s without a fresh ts (3 missed heartbeats) as OFFLINE.
+  - interval: 30s
+    then:
+      - script.execute: publish_state

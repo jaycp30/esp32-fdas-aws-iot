@@ -1,8 +1,8 @@
-import { Stack } from 'aws-cdk-lib';
-import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { AwsCustomResource, AwsCustomResourcePolicy, PhysicalResourceId } from 'aws-cdk-lib/custom-resources';
-import { defineBackend } from '@aws-amplify/backend';
-import { auth } from './auth/resource';
+import { Stack } from 'aws-cdk-lib'
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam'
+import { AwsCustomResource, AwsCustomResourcePolicy, PhysicalResourceId } from 'aws-cdk-lib/custom-resources'
+import { defineBackend } from '@aws-amplify/backend'
+import { auth } from './auth/resource'
 
 /**
  * FDAS Monitoring - Gen 2 backend, architecture "A1": the browser
@@ -16,10 +16,10 @@ import { auth } from './auth/resource';
  */
 const backend = defineBackend({
   auth,
-});
+})
 
-const unauthRole = backend.auth.resources.unauthenticatedUserIamRole;
-const { region, account } = Stack.of(unauthRole);
+const unauthRole = backend.auth.resources.unauthenticatedUserIamRole
+const { region, account } = Stack.of(unauthRole)
 
 /**
  * Least-privilege AWS IoT policy for the GUEST (unauthenticated) role
@@ -57,7 +57,7 @@ const { region, account } = Stack.of(unauthRole);
 // `\${cognito-identity.amazonaws.com:sub}` produces the literal
 // characters `${cognito-identity.amazonaws.com:sub}` in the resulting
 // string, which is exactly what IAM needs to see.
-const guestClientArn = `arn:aws:iot:${region}:${account}:client/\${cognito-identity.amazonaws.com:sub}-*`;
+const guestClientArn = `arn:aws:iot:${region}:${account}:client/\${cognito-identity.amazonaws.com:sub}-*`
 
 unauthRole.addToPrincipalPolicy(
   new PolicyStatement({
@@ -65,26 +65,33 @@ unauthRole.addToPrincipalPolicy(
     actions: ['iot:Connect'],
     resources: [guestClientArn],
   }),
-);
+)
 
 // --- iot:Subscribe ------------------------------------------------------
 // Scoped to the two topic SHAPES the contract defines (docs/mqtt-
-// contract.md §3, rules C1-C5), across any device ID ("+") - there's one
-// device today (fdas-iot-ane1-input-01), but this doesn't need editing
-// when a second one joins. `topicfilter/` is the IoT ARN resource type for
-// the *subscribe request* itself (the filter string, e.g. "fdas/+/state"),
-// distinct from the `topic/` ARNs below, which govern each individual
-// message actually being delivered.
+// contract.md §3), across any device ID - there's one device today
+// (fdas-iot-ane1-input-01), but this doesn't need editing when a second
+// one joins. `topicfilter/` is the IoT ARN resource type for the
+// *subscribe request* itself, distinct from the `topic/` ARNs below, which
+// govern each individual message actually being delivered.
+//
+// "*" and NOT the MQTT wildcard "+": in AWS IoT policies, "+" and "#" are
+// LITERAL characters. `topicfilter/fdas/+/state` would only allow
+// subscribing to the literal filter text "fdas/+/state"; the app subscribes
+// to the concrete topic "fdas/fdas-iot-ane1-input-01/state", which that
+// would DENY - and AWS IoT disconnects a client on any denied subscribe.
+// (That exact mistake shipped in the first deploy: the page looped on
+// "Socket closed".) "*" is the IAM-style wildcard that actually matches.
 unauthRole.addToPrincipalPolicy(
   new PolicyStatement({
     sid: 'FdasGuestIotSubscribe',
     actions: ['iot:Subscribe'],
     resources: [
-      `arn:aws:iot:${region}:${account}:topicfilter/fdas/+/state`,
-      `arn:aws:iot:${region}:${account}:topicfilter/fdas/+/status`,
+      `arn:aws:iot:${region}:${account}:topicfilter/fdas/*/state`,
+      `arn:aws:iot:${region}:${account}:topicfilter/fdas/*/status`,
     ],
   }),
-);
+)
 
 // --- iot:Receive ------------------------------------------------------
 // `topic/` ARNs use "*" rather than "+": unlike a subscribe topic FILTER,
@@ -99,7 +106,7 @@ unauthRole.addToPrincipalPolicy(
       `arn:aws:iot:${region}:${account}:topic/fdas/*/status`,
     ],
   }),
-);
+)
 
 /**
  * Resolve this account's AWS IoT Data-ATS endpoint at DEPLOY time, so it
@@ -110,7 +117,7 @@ unauthRole.addToPrincipalPolicy(
  * instead. The custom resource's Lambda can call exactly one read-only
  * IoT API and nothing else.
  */
-const iotEndpointStack = backend.createStack('FdasIotEndpointStack');
+const iotEndpointStack = backend.createStack('FdasIotEndpointStack')
 
 // One call definition reused for both onCreate and onUpdate, so a
 // redeploy re-resolves the endpoint too (harmless - it's the same fixed
@@ -128,7 +135,7 @@ const describeIotEndpoint = {
   action: 'DescribeEndpointCommand',
   parameters: { endpointType: 'iot:Data-ATS' },
   physicalResourceId: PhysicalResourceId.of('FdasIotDataEndpoint'),
-};
+}
 
 const iotEndpoint = new AwsCustomResource(iotEndpointStack, 'FdasIotDataEndpoint', {
   onCreate: describeIotEndpoint,
@@ -140,7 +147,7 @@ const iotEndpoint = new AwsCustomResource(iotEndpointStack, 'FdasIotDataEndpoint
   // support - skip the ~60s "install the latest AWS SDK from npm" step
   // this construct otherwise defaults to for a plain describeEndpoint call.
   installLatestAwsSdk: false,
-});
+})
 
 /**
  * Exposes the endpoint (and region) to the frontend via
@@ -156,4 +163,4 @@ backend.addOutput({
       region,
     },
   },
-});
+})

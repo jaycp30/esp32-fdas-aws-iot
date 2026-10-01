@@ -17,6 +17,8 @@ easyeda-backup/
 BackupProjects_*.zip
 Schematic_*.pdf
 BOM_*.xlsx
+# My working sheet: holds a screenshot of the designer's newer, unpublished schematic revision.
+schematic.xlsx
 
 # ESPHome secrets and build output, in case an ESPHome folder is ever pointed at firmware/.
 secrets.yaml

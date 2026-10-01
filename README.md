@@ -33,6 +33,65 @@ and commit:
 firmware/sync-from-esphome.sh
 ```
 
+## Bill of materials
+
+The hardware exists in two stages:
+
+- **Input module PCB:** designed in EasyEDA by Jake, not yet built. Its parts have exact part
+  numbers.
+- **Breadboard prototype:** the one running today. It uses the PCB's circuit (optocouplers into a
+  74HC04 inverter) but has fewer channels (Zone 1–3 and MON), and most of its parts have no
+  recorded part number.
+
+### Input module PCB (design "ESP32 v4")
+
+Part numbers come from the EasyEDA design. The LCSC numbers were checked on lcsc.com on
+2026-10-01.
+
+| Ref | Qty | Part | Manufacturer | Manufacturer part | LCSC |
+|-----|-----|------|--------------|-------------------|------|
+| U1 | 1 | ESP32 development board, 38-pin | Espressif | ESP32-DevKitC | [C571180](https://www.lcsc.com/product-detail/C571180.html) |
+| U2–U6 | 5 | Optocoupler, transistor output, DIP-4 | DDF | PC817C-FEL-D | [C50229496](https://www.lcsc.com/product-detail/C50229496.html) |
+| U8 | 1 | Hex inverter, DIP-14 | Lingxing (LX) | SN74HC04N(LX) | [C22436641](https://www.lcsc.com/product-detail/C22436641.html) |
+| U7 | 1 | RGB LED, 5 mm, common cathode | Inolux | HV-5RGB60 | [C5656084](https://www.lcsc.com/product-detail/C5656084.html) |
+| LED1–LED5 | 5 | Red LED, 5 mm | Everlight | 333-2SURD/S530-A3 | [C87271](https://www.lcsc.com/product-detail/C87271.html) |
+| KEY1 | 1 | Tactile switch, 6 × 6 mm, through-hole | Korean Hroparts Elec | K2-1102DP-E4SW-04 | [C136684](https://www.lcsc.com/product-detail/C136684.html) |
+| H1, H2 | 2 | Female header, 1 × 20, 2.54 mm (socket for U1) | BOOMELE | 2.54-1*20P | [C50984](https://www.lcsc.com/product-detail/C50984.html) |
+| `5V+`, `5V-`, `24V+`, `24V-` | 4 | Male header, 1 × 2, 2.54 mm (supply-select jumpers) | Ckmtw | B-2100S02P-A110 | [C124375](https://www.lcsc.com/product-detail/C124375.html) |
+| — | 2 | Jumper shunt, 2.54 mm, for the supply-select headers | not specified | | |
+| Z1–Z4, MON, IN, PWR5V, PWR5V/24V, RLY-PWR | 9 | Screw terminal, 2-pin, 5.00 mm pitch | not specified | | |
+| R1–R5, R11–R16, R25, R26 | 13 | Resistor, 10 kΩ, axial | not specified | | |
+| R6–R10 | 5 | Resistor, 1 kΩ, axial, **at least 1 W** for 24V mode | not specified | | |
+| R17 | 1 | Resistor, 22 Ω, axial (RGB blue) | not specified | | |
+| R18 | 1 | Resistor, 68 Ω, axial (RGB red) | not specified | | |
+| R19 | 1 | Resistor, 47 Ω, axial (RGB green) | not specified | | |
+| — | 4 | M2 mounting screws | not specified | | |
+
+- **R6–R10:** EasyEDA labels them "820", but their value is 1 kΩ. In 24V mode each one
+  dissipates about 0.43 W, so a standard ¼ W resistor will overheat.
+- **Supply jumpers:** fit `5V+` and `5V-`, *or* `24V+` and `24V-`. **Never fit `5V+` and `24V+`
+  together**: that puts 24V onto the ESP32 board's 5V rail and destroys it.
+- **A newer revision** exists as a schematic only. It drops the 74HC04 and gives each channel a
+  100 Ω (5V) or 1.5 kΩ (24V) series resistor, selected by jumpers. This table will change when
+  that design is finalised.
+
+### Breadboard prototype (running today)
+
+| Part | Qty | What's known |
+|------|-----|--------------|
+| ESP32 development board, 38-pin, USB-C | 1 | A DevKitC-compatible clone, not Espressif's own board. The module is marked "ESP-32D" with no maker named. esptool reads the chip as **ESP32-D0WD-V3 revision 3.1**, with 4 MB flash and a 40 MHz crystal. It uses a CP2102 USB-serial chip. No vendor SKU. |
+| Screw-terminal breakout for the 38-pin board | 1 | Generic, no SKU |
+| Optocoupler, DIP-4 | 4 | PC817 per the design; the maker isn't readable in photos |
+| Hex inverter, DIP-14 | 1 | 74HC04 per the design; the maker isn't readable in photos |
+| Red LED, 5 mm | 4 | No part number |
+| Tactile button, 6 × 6 mm | 4 | Stands in for the panel's zone relay contacts |
+| Resistors | | Values follow the design; not verified from photos |
+| Solderless breadboard and jumper wires | | Generic |
+
+There's no Zone 4 channel on the breadboard: GPIO35 is tied to GND so it reads a steady "off".
+The bench also has relay modules and a 24V → 5V buck converter, but those aren't part of the
+input module and their models aren't recorded.
+
 ## Deploying the web app
 
 The web app is hosted on AWS Amplify (region `ap-northeast-1`). Live app:

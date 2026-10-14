@@ -42,5 +42,7 @@ backups/
 # docs/ stays local for now: it names the co-worker, details their board design, and the
 # hosting runbook contains the AWS account ID and personal account names.
 # Exception: the MQTT contract is shared by firmware, cloud and web, and has no secrets.
+# Exception: docs/anatomy/ (the interactive zone-input figure) is published on purpose.
 docs/*
 !docs/mqtt-contract.md
+!docs/anatomy/
